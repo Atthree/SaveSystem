@@ -41,8 +41,21 @@ namespace Atthree.Saving
 
         protected override void Restore(State state)
         {
+            // CharacterController açıkken konumu kendi tutar ve dışarıdan verilen konumu geri alabilir:
+            // ışınlarken kısa süre kapat.
+            var controller = GetComponent<CharacterController>();
+            bool controllerWasEnabled = controller != null && controller.enabled;
+            if (controllerWasEnabled) controller.enabled = false;
+
+            // NavMeshAgent de konumu kendi yönetir; ona "Warp" (ışınlan) demek gerekir.
+            var agent = GetComponent<UnityEngine.AI.NavMeshAgent>();
+            if (agent != null && agent.enabled && agent.isOnNavMesh)
+                agent.Warp(state.position);
+
             transform.SetPositionAndRotation(state.position, state.rotation);
             if (saveScale) transform.localScale = state.scale;
+
+            if (controllerWasEnabled) controller.enabled = true;
 
             if (TryGetComponent(out Rigidbody body))
             {

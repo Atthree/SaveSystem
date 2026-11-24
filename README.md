@@ -167,16 +167,75 @@ SaveSystem.Settings.AddMigration(1, root =>   // runs on saves made with version
 `root` is the whole save (`meta`, `data`, `entities`) as a Newtonsoft `JObject`. Migrations run in
 order: a version 1 save is upgraded 1 → 2 → 3.
 
-## Good to know
+## Using your own models and prefabs
 
-- **Objects spawned at runtime** (dropped items, spawned enemies) have no id. Give them one with
-  `GetComponent<SaveableEntity>().SetId("enemy_" + index)` before saving, and create them again before
-  loading. Automatic re-spawning is not included yet.
+Characters, props and enemies from the Asset Store or your own Blender models are saved the same way.
+The rules below decide whether they load back correctly.
+
+### Setup checklist
+
+| # | Do this | Why |
+|---|---|---|
+| 1 | Put `SaveableEntity` on the **root** object of the model (the one you move), not on a child mesh | `SaveTransform` saves the position of the object it is on |
+| 2 | Add it to the **prefab** if every copy should be saved | The prefab asset itself gets no id; every copy placed in a scene gets its own id automatically |
+| 3 | Place objects in the scene **in the Editor** whenever possible | They get a fixed id. Objects created by code at runtime need `SetId` (see below) |
+| 4 | Add one saveable component per thing to save: `SaveTransform` (where), `SaveActiveState` (exists or not), your own component (health, inventory, open/closed) | Only components that implement `ISaveable` are saved; nothing is saved "by itself" |
+
+### What works out of the box
+
+| Model has | Result |
+|---|---|
+| `Rigidbody` | Position, rotation and velocity are restored |
+| `CharacterController` (most character controllers) | Handled: it is disabled for a moment while the character is moved back, then enabled again |
+| `NavMeshAgent` (AI enemies) | Handled: the agent is moved with `Warp`, so it doesn't snap back |
+| Inactive object (collected item) | Found and restored, even though it's inactive |
+| Child objects without their own `SaveableEntity` | They move with their parent; their own state isn't saved |
+
+### What needs your attention
+
+| Situation | What to do |
+|---|---|
+| **Animator** (a door's open animation, a character's pose) | Not saved. Save the *state* that drives it (e.g. `isOpen`) in your own component and set the Animator parameter in `Restore` |
+| **Ragdolls / several Rigidbodies** under one model | Only the object with `SaveTransform` is restored. Add `SaveableEntity` + `SaveTransform` to each body part that must keep its pose, or save the character standing |
+| **A script that moves the object every frame** (your own player controller) | If it stores its own position/target, restore those too in a custom component, otherwise it moves the object back |
+| **Objects created by code** (`Instantiate`) | They copy the prefab's empty id, or the id of the object you cloned. Give each one a stable id: `SetId("enemy_" + index)`, and create them again before `Load` |
+| **Destroyed objects** (`Destroy`) | Their state stays in the save, but nothing restores them. For things that disappear, use `SetActive(false)` + `SaveActiveState` instead of `Destroy` |
+
+### Rules that keep old saves working
+
+Your save files live longer than your code. These changes break the link between a save and an object:
+
+- **Don't remove and re-add `SaveableEntity`**: the object gets a new id and its old saved state is
+  lost. Use **New Id** only on purpose.
+- **Don't rename a saveable component's class** without keeping its key: the state is stored under the
+  class name. After a rename, add `public override string SaveKey => "OldClassName";`.
+- **Renaming a field in `State`** loses that value in old saves. Adding fields is safe (old saves get
+  the default value); removing fields is safe (the old value is ignored). For renames, use a migration.
+- **Never put Unity object references in `State`** (`GameObject`, `Transform`, `Material`, `Sprite`…).
+  They can't be written to a file. Save a name, an id or an index and look the object up in `Restore`.
+
+### Other things to watch out for
+
+- **Call `Save`/`Load` at a calm moment**, not in the middle of a physics step: e.g. from a menu,
+  a checkpoint, or `AutoSaver`.
+- **`OnApplicationQuit` is not reliable on mobile**: the OS may kill the app. `AutoSaver` also saves
+  when the app goes to the background (`saveOnPause`).
 - **Several scenes:** objects that aren't in the loaded scene keep their saved state; saving in
   scene B doesn't forget the objects of scene A.
 - **`SaveSystem.BeforeSave`** is the right moment to copy values into `SaveSystem.Current`;
   **`SaveSystem.AfterLoad`** to read them back.
 - **`SaveSystem.NewGame()`** clears the data in memory (not the files on disk).
+- **WebGL and consoles** are not tested yet.
+
+### Troubleshooting
+
+| Problem | Likely cause |
+|---|---|
+| An object doesn't go back after Load | It has no `SaveTransform`, or a script of yours moves it back (see above) |
+| Console: *"… id'si yok"* (has no id) | Object created at runtime without `SetId` |
+| Console: *"Aynı id'ye sahip iki obje"* (two objects with the same id) | Object cloned by code; give it a unique id |
+| A value comes back as the default | Key name typo, a renamed field, or a changed type |
+| Console: *"… kaydı okunamadı"* (save can't be read) | File broken and no backup, or the encryption key changed |
 
 ## Files
 
@@ -193,12 +252,12 @@ order: a version 1 save is upgraded 1 → 2 → 3.
 | `Runtime/UnityJsonConverters.cs` | JSON for Vector3, Quaternion, Color... |
 | `Runtime/Demo/` | Demo panel and objects |
 | `Editor/` | Save Browser, menus, SaveableEntity inspector |
-| `Tests/Runtime/SaveSystemTests.cs` | 15 tests |
+| `Tests/Runtime/SaveSystemTests.cs` | 16 tests |
 
 ## Tests
 
-15 PlayMode tests: all data types round-trip, defaults for missing values, invalid slot names, scene
-objects (transform, active state, custom component, velocity, inactive objects), objects from other
+16 PlayMode tests: all data types round-trip, defaults for missing values, invalid slot names, scene
+objects (transform, active state, custom component, velocity, inactive objects, CharacterController), objects from other
 scenes kept across saves, atomic writes and backup recovery, corrupt files, compression and
 encryption (and wrong keys), migrations, slot listing and deleting, play time, Preferences.
 
@@ -371,18 +430,78 @@ SaveSystem.Settings.AddMigration(1, root =>   // sürüm 1 ile yapılmış kayı
 `root` kaydın tamamıdır (`meta`, `data`, `entities`), Newtonsoft `JObject` olarak. Dönüşümler sırayla
 çalışır: sürüm 1 kaydı 1 → 2 → 3 diye yükseltilir.
 
-## Bilmekte fayda var
+## Kendi modellerin ve prefab'ların
 
-- **Oyun sırasında yaratılan objelerin** (düşen eşyalar, doğan düşmanlar) id'si yoktur. Kaydetmeden
-  önce `GetComponent<SaveableEntity>().SetId("enemy_" + index)` ile id ver ve yüklemeden önce onları
-  tekrar yarat. Otomatik yeniden yaratma henüz yok.
+Asset Store'dan ya da kendi Blender modellerinden gelen karakterler, eşyalar ve düşmanlar da aynı
+şekilde kaydedilir. Doğru geri yüklenip yüklenmeyeceklerini aşağıdaki kurallar belirler.
+
+### Kurulum listesi
+
+| # | Yap | Neden |
+|---|---|---|
+| 1 | `SaveableEntity`'yi modelin **kök** objesine koy (hareket ettirdiğin obje), alt mesh'e değil | `SaveTransform` üzerinde durduğu objenin konumunu kaydeder |
+| 2 | Her kopyası kaydedilecekse **prefab'a** ekle | Prefab asset'inin kendisi id almaz; sahneye konan her kopya otomatik kendi id'sini alır |
+| 3 | Mümkünse objeleri sahneye **editörde** koy | Sabit bir id alırlar. Oyun sırasında kodla yaratılanlar `SetId` ister (aşağıda) |
+| 4 | Kaydedilecek her şey için bir bileşen ekle: `SaveTransform` (nerede), `SaveActiveState` (var mı), kendi bileşenin (can, envanter, açık/kapalı) | Sadece `ISaveable` olan bileşenler kaydedilir; hiçbir şey "kendiliğinden" kaydedilmez |
+
+### Hazır çalışanlar
+
+| Modelde | Sonuç |
+|---|---|
+| `Rigidbody` | Konum, rotasyon ve hız geri gelir |
+| `CharacterController` (çoğu karakter kontrolcüsü) | Halledildi: karakter geri taşınırken kısa süre kapatılıp tekrar açılır |
+| `NavMeshAgent` (yapay zeka düşmanları) | Halledildi: agent `Warp` ile taşınır, eski yerine geri zıplamaz |
+| Pasif obje (toplanmış eşya) | Pasif olsa da bulunur ve geri yüklenir |
+| Kendi `SaveableEntity`'si olmayan alt objeler | Ebeveynleriyle birlikte hareket eder; kendi durumları kaydedilmez |
+
+### Dikkat isteyenler
+
+| Durum | Ne yapmalı |
+|---|---|
+| **Animator** (kapının açılma animasyonu, karakterin pozu) | Kaydedilmez. Onu yöneten *durumu* (ör. `isOpen`) kendi bileşeninde kaydet ve `Restore`'da Animator parametresini ayarla |
+| Tek modelin altında **ragdoll / birden çok Rigidbody** | Sadece `SaveTransform` olan obje geri yüklenir. Pozunu koruması gereken her parçaya `SaveableEntity` + `SaveTransform` ekle ya da karakteri ayakta kaydet |
+| **Objeyi her kare hareket ettiren bir script** (kendi oyuncu kontrolcün) | Kendi konum/hedef değişkenlerini tutuyorsa onları da kendi bileşeninde geri yükle, yoksa objeyi eski yerine taşır |
+| **Kodla yaratılan objeler** (`Instantiate`) | Prefab'ın boş id'sini ya da kopyalanan objenin id'sini alırlar. Her birine sabit bir id ver: `SetId("enemy_" + index)`, ve `Load`'dan önce onları tekrar yarat |
+| **Yok edilen objeler** (`Destroy`) | Durumları kayıtta kalır ama onları geri getiren bir şey yok. Kaybolan şeyler için `Destroy` yerine `SetActive(false)` + `SaveActiveState` kullan |
+
+### Eski kayıtları bozmamak için kurallar
+
+Kayıt dosyaların kodundan uzun yaşar. Şu değişiklikler kayıt ile obje arasındaki bağı koparır:
+
+- **`SaveableEntity`'yi silip tekrar ekleme**: obje yeni id alır, eski kayıtlı durumu kaybolur.
+  **Yeni Id** düğmesini sadece bilerek kullan.
+- **Kaydedilebilir bileşenin sınıf adını** anahtarını korumadan **değiştirme**: durum sınıf adıyla
+  saklanır. Ad değiştirdikten sonra `public override string SaveKey => "EskiSinifAdi";` ekle.
+- **`State` içindeki bir alanın adını değiştirmek** eski kayıtlarda o değeri kaybettirir. Alan eklemek
+  güvenli (eski kayıtlar varsayılan değeri alır); alan silmek güvenli (eski değer yok sayılır). Ad
+  değişikliği için sürüm geçişi (migration) kullan.
+- **`State`'e asla Unity obje referansı koyma** (`GameObject`, `Transform`, `Material`, `Sprite`…).
+  Dosyaya yazılamazlar. Bir isim, id ya da sıra numarası kaydet ve `Restore`'da objeyi bul.
+
+### Dikkat edilecek diğer şeyler
+
+- **`Save`/`Load`'u sakin bir anda çağır**, fizik adımının ortasında değil: ör. menüden, bir kontrol
+  noktasında ya da `AutoSaver` ile.
+- **`OnApplicationQuit` mobilde güvenilir değil**: işletim sistemi uygulamayı öldürebilir. `AutoSaver`
+  uygulama arka plana atılınca da kaydeder (`saveOnPause`).
 - **Birden çok sahne:** yüklü sahnede olmayan objeler kayıtlı durumlarını korur; B sahnesinde
   kaydetmek A sahnesinin objelerini unutmaz.
 - **`SaveSystem.BeforeSave`** değerleri `SaveSystem.Current`'a yazmak için doğru andır;
   **`SaveSystem.AfterLoad`** geri okumak için.
 - **`SaveSystem.NewGame()`** bellekteki veriyi temizler (diskteki dosyaları değil).
+- **WebGL ve konsollar** henüz test edilmedi.
 
-Dosya listesi ve testler için İngilizce bölümdeki [Files](#files) ve [Tests](#tests) kısımlarına bak.
+### Sorun giderme
+
+| Sorun | Muhtemel sebep |
+|---|---|
+| Obje Load'dan sonra eski yerine dönmüyor | `SaveTransform` yok ya da senin bir script'in onu geri taşıyor (yukarıya bak) |
+| Console: *"… id'si yok"* | Oyun sırasında `SetId` verilmeden yaratılmış obje |
+| Console: *"Aynı id'ye sahip iki obje"* | Kodla kopyalanmış obje; benzersiz bir id ver |
+| Bir değer varsayılan olarak geri geliyor | Anahtar adında yazım hatası, adı değişmiş alan ya da değişmiş tip |
+| Console: *"… kaydı okunamadı"* | Dosya bozuk ve yedek yok, ya da şifreleme anahtarı değişmiş |
+
+Dosya listesi ve testler (16 test) için İngilizce bölümdeki [Files](#files) ve [Tests](#tests) kısımlarına bak.
 
 ## Lisans
 

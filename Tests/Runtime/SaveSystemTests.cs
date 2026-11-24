@@ -158,6 +158,24 @@ namespace Atthree.Saving.Tests
             Assert.AreEqual(50, chest.GetComponent<TestInventory>().gold);
         }
 
+        [UnityTest]
+        public IEnumerator Entity_WithCharacterController_IsTeleportedBack()
+        {
+            var player = Entity("player", typeof(CharacterController), typeof(SaveTransform));
+            var controller = player.GetComponent<CharacterController>();
+            player.transform.position = new Vector3(3, 1, 3);
+            yield return null;
+            SaveSystem.Save("slot1");
+
+            controller.Move(new Vector3(-8, 0, 0)); // oyuncu yürüdü
+            yield return null;
+            Assert.IsTrue(SaveSystem.Load("slot1"));
+            yield return null;
+            controller.Move(Vector3.zero); // controller bir sonraki hareketinde eski yere dönmemeli
+            Assert.Less(Vector3.Distance(new Vector3(3, 1, 3), player.transform.position), 0.05f);
+            Assert.IsTrue(controller.enabled, "controller tekrar açılmalı");
+        }
+
         [Test]
         public void Entities_NotInScene_ArePreservedAcrossSaves()
         {

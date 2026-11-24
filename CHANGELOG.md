@@ -7,4 +7,6 @@
 - FileStorage with atomic writes and backup recovery; MemoryStorage; ISaveStorage for custom storage.
 - Optional GZip compression and AES-256 encryption with a self-describing file header.
 - Editor: Save Browser, Open Save Folder, Delete All Saves, Create Demo Scene, SaveableEntity inspector.
-- 15 PlayMode tests.
+- SaveTransform handles CharacterController and NavMeshAgent.
+- README: using your own models/prefabs, rules for keeping old saves working, troubleshooting.
+- 16 PlayMode tests.
