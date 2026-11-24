@@ -1,0 +1,14 @@
+{
+  "name": "com.atthree.save-system",
+  "version": "0.1.0",
+  "displayName": "Save System",
+  "description": "Save/load system for Unity 6: key-value data, automatic saving of scene objects, slots with metadata, crash-safe files with backups, optional compression and encryption, version migrations.",
+  "unity": "6000.0",
+  "author": {
+    "name": "Atthree",
+    "url": "https://github.com/Atthree"
+  },
+  "license": "MIT",
+  "keywords": [],
+  "dependencies": {}
+}
