@@ -9,6 +9,14 @@
     "url": "https://github.com/Atthree"
   },
   "license": "MIT",
-  "keywords": [],
-  "dependencies": {}
+  "keywords": [
+    "save",
+    "load",
+    "persistence",
+    "serialization",
+    "json"
+  ],
+  "dependencies": {
+    "com.unity.nuget.newtonsoft-json": "3.2.1"
+  }
 }
