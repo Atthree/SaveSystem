@@ -10,11 +10,22 @@
   },
   "license": "MIT",
   "keywords": [
-    "save",
-    "load",
+    "unity",
+    "unity3d",
+    "unity6",
+    "upm",
+    "upm-package",
+    "unity-package",
+    "gamedev",
+    "save-system",
+    "save-load",
+    "save-game",
     "persistence",
     "serialization",
-    "json"
+    "json",
+    "newtonsoft-json",
+    "encryption",
+    "player-prefs-alternative"
   ],
   "dependencies": {
     "com.unity.nuget.newtonsoft-json": "3.2.1",
